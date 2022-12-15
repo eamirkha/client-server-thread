@@ -19,10 +19,20 @@
 #include <iostream>
 using namespace std;
 
-#include "UDPSocket.h"
-#include <cstring>
 #include <stdio.h>
-#include <cstdio>
+#include "UDPServer.h"
+
+#ifndef _WIN32
+using SOCKET = int
+#define WSAGetLastError() 1
+#else
+#include <winsock2.h>
+#pragma comment(lib,"ws2_32.lib") //Winsock Library
+#endif
+
+//#define SERVER "127.0.0.1"	//ip address of udp server
+#define BUFLEN 	1024		    //Max length of buffer
+#define PORT    8888			//The port on which to listen for incoming dat
 
 
 
@@ -69,50 +79,52 @@ bool quitnow = false;
 
 
 
-bool sign_in(UDPSocket* sock, sockaddr_in* si_dest)
+bool sign_in(UDPServer* serv, sockaddr_in* si_dest)
 {
 	int dest_len = sizeof(*si_dest);
 	char buffer[BUFLEN];
-	char msg[BUFLEN];
+	char msg_login[BUFLEN] = "Incorrect login";
+	char msg_passwd[BUFLEN] = "Incorrect password";
+	char msg_ok[BUFLEN] = "OK";
 
 	while (1)
 	{
-		printf("\nPlease enter login : ");
-		gets_s(msg, BUFLEN);
-
-		//send the message
-		sock->SendDatagram(msg, (int)strlen(msg), (struct sockaddr*)si_dest, dest_len);
-
-		//receive a reply and print it
+		printf("\nWaiting for login...   ");
+		fflush(stdout);
 		//clear the buffer by filling null, it might have previously received data
 		memset(buffer, '\0', BUFLEN);
+
 		//try to receive some data, this is a blocking call
+		serv->RecvDatagram(buffer, BUFLEN, (struct sockaddr*)&si_dest, &dest_len);
 
-		sock->RecvDatagram(buffer, BUFLEN, (struct sockaddr*)si_dest, &dest_len);
-
-		puts(buffer);
-
-		//check response if login is ok
-		if (!strcmp(buffer, "OK"))
+		//check the login
+		if (strcmp(buffer, "client"))
 		{
-			printf("\nPlease enter password : ");
-			gets_s(msg, BUFLEN);
-
-			//send the message
-			sock->SendDatagram(msg, (int)strlen(msg), (struct sockaddr*)si_dest, dest_len);
-			//return true;
-
-			//receive a reply and print it
+			//send error message
+			serv->SendDatagram(msg_login, (int)strlen(msg_login), (struct sockaddr*)&si_dest, dest_len);
+		}
+		else
+		{
+			//send 'OK'
+			serv->SendDatagram(msg_ok, (int)strlen(msg_ok), (struct sockaddr*)&si_dest, dest_len);
+			printf("\nWaiting for password...   ");
+			fflush(stdout);
 			//clear the buffer by filling null, it might have previously received data
 			memset(buffer, '\0', BUFLEN);
+
 			//try to receive some data, this is a blocking call
+			serv->RecvDatagram(buffer, BUFLEN, (struct sockaddr*)&si_dest, &dest_len);
 
-			sock->RecvDatagram(buffer, BUFLEN, (struct sockaddr*)si_dest, &dest_len);
-
-			puts(buffer);
-			//check response if password is ok
-			if (!strcmp(buffer, "OK"))
+			//check password
+			if (strcmp(buffer, "CLIENT"))
 			{
+				//send error message
+				serv->SendDatagram(msg_passwd, (int)strlen(msg_passwd), (struct sockaddr*)&si_dest, dest_len);
+			}
+			else
+			{
+				//send 'OK'
+				serv->SendDatagram(msg_ok, (int)strlen(msg_ok), (struct sockaddr*)&si_dest, dest_len);
 				return true;
 			}
 			break;
@@ -127,7 +139,7 @@ bool sign_in(UDPSocket* sock, sockaddr_in* si_dest)
 
 struct  threadargs {
 	DWORD_PTR* lockarg;
-	UDPSocket* socketarg;
+	UDPServer* serverarg;
 };
 
 
@@ -148,63 +160,24 @@ int main(int argc, char* argv[]) {
 	//	SOCKET s;
 	struct sockaddr_in si_other;
 	int slen = sizeof(si_other);
-
+	unsigned short srvport;
 	char buf[BUFLEN];
-	char message[BUFLEN];
+	char msg[BUFLEN];
+	srvport = (1 == argc) ? PORT : atoi(argv[1]);
 
-	unsigned short srv_port = 0;
-	char srv_ip_addr[40];
-	memset(srv_ip_addr, 0, 40);
 
 	//create socket
-	UDPSocket client_sock;
+	UDPServer server(srvport);
 
-	//setup address structure
-	memset((char*)&si_other, 0, sizeof(si_other));
-	si_other.sin_family = AF_INET;
-
-	//si_other.sin_port = htons(PORT);
-	//si_other.sin_addr.S_un.S_addr = inet_addr(SERVER);
-
-	if (1 == argc)
+	if (!sign_in(&server, &si_other))
 	{
-		si_other.sin_port = htons(PORT);
-		si_other.sin_addr.S_un.S_addr = inet_addr(SERVER);
-		printf("1: Server - addr=%s , port=%d\n", SERVER, PORT);
-	}
-	else if (2 == argc)
-	{
-		//		si_other.sin_port = htons(PORT);
-		//		si_other.sin_addr.S_un.S_addr = inet_addr(argv[1]);
-		si_other.sin_port = htons(atoi(argv[1]));
-		si_other.sin_addr.S_un.S_addr = inet_addr(SERVER);
-		printf("2: argv[0]: Server - addr=%s , port=%d\n", SERVER, atoi(argv[1]));
-	}
-	else
-	{
-		si_other.sin_port = htons(atoi(argv[2]));
-		si_other.sin_addr.S_un.S_addr = inet_addr(argv[1]);
-		printf("3: Server - addr=%s , port=%d\n", argv[1], atoi(argv[2]));
-	}
-
-	//sign_in function call
-	if (!sign_in(&client_sock, &si_other))
-	{
-		puts("Can`t login\n");
+		puts("Failed authentication\n");
 		exit(0);
-
 	}
-
-
-	// prepare parameter(s) for the async thread
-//	DWORD_PTR* svRecvThrArgs = new DWORD_PTR[1];
-	// pass the thread lock variable as parameter
-	//svRecvThrArgs[0] = (DWORD_PTR)&recv_lock;
-
 
 	threadargs svRecvThrArgs;
 	svRecvThrArgs.lockarg = (PDWORD_PTR)&recv_lock;
-	svRecvThrArgs.socketarg = &client_sock;
+	svRecvThrArgs.serverarg = &server;
 
 
 	// start the thread with parameters
@@ -216,10 +189,10 @@ int main(int argc, char* argv[]) {
 		LockThread(recv_lock); // lock with the same var
 
 		printf("\nEnter message : ");
-		gets_s(message, BUFLEN);
+		gets_s(msg, BUFLEN);
 
 		//send the message
-		client_sock.SendDatagram(message, (int)strlen(message), (struct sockaddr*)&si_other, slen);		UnlockThread(recv_lock); // unlock with the same var
+		server.SendDatagram(msg, (int)strlen(msg), (struct sockaddr*)&si_other, slen);
 //*/
 		sleep(10);
 		//		cout << "\nmain loop, after sleep\n";
@@ -240,23 +213,23 @@ THREADFUNCVAR MyAsyncThread(THREADFUNCARGS lpParam) {
 	// get 0th param, thats the thread lock variable used in main func
 
 	threadargs* pthrargs = (threadargs*)lpParam;
-	UDPSocket* psocket = pthrargs->socketarg;
+	UDPServer* pserver = pthrargs->serverarg;
 
 	THREAD_LOCK& ref_recv_lock = *((THREAD_LOCK*)(pthrargs->lockarg));
 
 
-	sockaddr_in  si_dest;
+	sockaddr_in  si_other;
 
-	int dest_len = sizeof(si_dest);
-	char buffer[BUFLEN];
+	int slen = sizeof(si_other);
+	char buf[BUFLEN];
 	char msg1[BUFLEN];
 
 	// loop increment, check for exit and print
 	while (true) {
 		
-		psocket->RecvDatagram(buffer, BUFLEN, (struct sockaddr*)&si_dest, &dest_len);
+		pserver->RecvDatagram(buf, BUFLEN, (struct sockaddr*)&si_other, &slen);
 
-		puts(buffer);
+		puts(buf);
 		
 	}
 	return NULL;
