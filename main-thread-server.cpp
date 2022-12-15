@@ -21,6 +21,8 @@ using namespace std;
 
 #include <stdio.h>
 #include "UDPServer.h"
+#include <cstdio>
+#include <cstring>
 
 #ifndef _WIN32
 using SOCKET = int
@@ -194,6 +196,7 @@ int main(int argc, char* argv[]) {
 		//send the message
 		server.SendDatagram(msg, (int)strlen(msg), (struct sockaddr*)&si_other, slen);
 //*/
+		UnlockThread(recv_lock);
 		sleep(10);
 		//		cout << "\nmain loop, after sleep\n";
 	}
@@ -222,15 +225,12 @@ THREADFUNCVAR MyAsyncThread(THREADFUNCARGS lpParam) {
 
 	int slen = sizeof(si_other);
 	char buf[BUFLEN];
-	char msg1[BUFLEN];
 
 	// loop increment, check for exit and print
 	while (true) {
-		
 		pserver->RecvDatagram(buf, BUFLEN, (struct sockaddr*)&si_other, &slen);
 
 		puts(buf);
-		
 	}
 	return NULL;
 }

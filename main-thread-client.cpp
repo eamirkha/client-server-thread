@@ -219,7 +219,8 @@ int main(int argc, char* argv[]) {
 		gets_s(message, BUFLEN);
 
 		//send the message
-		client_sock.SendDatagram(message, (int)strlen(message), (struct sockaddr*)&si_other, slen);		UnlockThread(recv_lock); // unlock with the same var
+		client_sock.SendDatagram(message, (int)strlen(message), (struct sockaddr*)&si_other, slen);	
+		UnlockThread(recv_lock); // unlock with the same var
 //*/
 		sleep(10);
 		//		cout << "\nmain loop, after sleep\n";
